@@ -2,7 +2,14 @@ import { useState, useRef } from "react";
 import { Upload, ArrowLeft } from "lucide-react";
 import { PixelButton } from "./PixelButton";
 import { PixelCard } from "./PixelCard";
-import { identifyPlant, PlantIdentificationResult } from "../services/geminiService";
+import { PixelLoader } from "./PixelLoader";
+import { DiagnosisPanel } from "./DiagnosisPanel";
+import {
+  identifyPlant,
+  diagnosePlant,
+  PlantIdentificationResult,
+  PlantDiagnosis,
+} from "../services/geminiService";
 
 interface CameraPageProps {
   onBack: () => void;
@@ -16,9 +23,25 @@ export function CameraPage({ onBack }: CameraPageProps) {
     string | null
   >(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  
+  // Separate state for identify and diagnose results
   const [plantInfo, setPlantInfo] = useState<PlantIdentificationResult | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [identifyError, setIdentifyError] = useState<string | null>(null);
+  
+  const [diagnosis, setDiagnosis] = useState<PlantDiagnosis | null>(null);
+  const [diagnosisError, setDiagnosisError] = useState<string | null>(null);
+  
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Reset all results when leaving the page
+  const handleBack = () => {
+    setPlantInfo(null);
+    setIdentifyError(null);
+    setDiagnosis(null);
+    setDiagnosisError(null);
+    setSelectedImage(null);
+    onBack();
+  };
 
   const handleFileSelect = async (
     e: React.ChangeEvent<HTMLInputElement>,
@@ -29,24 +52,31 @@ export function CameraPage({ onBack }: CameraPageProps) {
       reader.onload = async (e) => {
         const imageData = e.target?.result as string;
         setSelectedImage(imageData);
-        setError(null);
-        setPlantInfo(null);
         
-        // Only analyze if in identify mode
         if (mode === "identify") {
+          // Clear only identify-related errors
+          setIdentifyError(null);
           setIsAnalyzing(true);
           try {
             const result = await identifyPlant(imageData);
             setPlantInfo(result);
           } catch (err) {
-            setError(err instanceof Error ? err.message : "Failed to identify plant");
+            setIdentifyError(err instanceof Error ? err.message : "Failed to identify plant");
           } finally {
             setIsAnalyzing(false);
           }
         } else {
-          // For diagnose mode, keep the mock behavior
+          // Clear only diagnosis-related errors
+          setDiagnosisError(null);
           setIsAnalyzing(true);
-          setTimeout(() => setIsAnalyzing(false), 2000);
+          try {
+            const result = await diagnosePlant(imageData);
+            setDiagnosis(result);
+          } catch (err) {
+            setDiagnosisError(err instanceof Error ? err.message : "Failed to diagnose plant");
+          } finally {
+            setIsAnalyzing(false);
+          }
         }
       };
       reader.readAsDataURL(file);
@@ -56,7 +86,7 @@ export function CameraPage({ onBack }: CameraPageProps) {
   return (
     <div className="max-w-4xl mx-auto p-4 md:p-6">
       <button
-        onClick={onBack}
+        onClick={handleBack}
         className="flex items-center gap-2 text-[var(--soil)] hover:text-[var(--sprout)] transition-colors mb-6"
       >
         <ArrowLeft className="w-4 h-4" strokeWidth={3} />
@@ -70,11 +100,7 @@ export function CameraPage({ onBack }: CameraPageProps) {
       {/* Mode Toggle */}
       <div className="flex gap-2 mb-6">
         <PixelButton
-          onClick={() => {
-            setMode("identify");
-            setPlantInfo(null);
-            setError(null);
-          }}
+          onClick={() => setMode("identify")}
           variant={
             mode === "identify" ? "primary" : "secondary"
           }
@@ -82,11 +108,7 @@ export function CameraPage({ onBack }: CameraPageProps) {
           IDENTIFY
         </PixelButton>
         <PixelButton
-          onClick={() => {
-            setMode("diagnose");
-            setPlantInfo(null);
-            setError(null);
-          }}
+          onClick={() => setMode("diagnose")}
           variant={
             mode === "diagnose" ? "primary" : "secondary"
           }
@@ -138,32 +160,25 @@ export function CameraPage({ onBack }: CameraPageProps) {
         {/* Analysis Results */}
         {selectedImage && (
           <div className="mt-6 pt-6 border-t-2 border-[var(--bark)]">
-            {isAnalyzing ? (
-              <div className="text-center py-8">
-                <div className="animate-pulse text-[var(--sprout)] mb-3">
-                  <span className="text-[40px]">🔍</span>
-                </div>
-                <p className="text-[10px] text-[var(--khaki)] uppercase">
-                  Analyzing...
-                </p>
-              </div>
-            ) : (
-              <div>
-                <h3 className="text-[14px] text-[var(--soil)] uppercase mb-4">
-                  {mode === "identify"
-                    ? "IDENTIFICATION RESULTS"
-                    : "DIAGNOSIS RESULTS"}
-                </h3>
+            <h3 className="text-[14px] text-[var(--soil)] uppercase mb-4">
+              {mode === "identify"
+                ? "IDENTIFICATION RESULTS"
+                : "DIAGNOSIS RESULTS"}
+            </h3>
 
-                {mode === "identify" ? (
+            {mode === "identify" ? (
+              <>
+                {isAnalyzing ? (
+                  <PixelLoader text="IDENTIFYING PLANT..." />
+                ) : (
                   <div className="space-y-3">
-                    {error ? (
+                    {identifyError ? (
                       <div className="p-4 bg-[var(--sand)] border-2 border-[var(--bark)]">
                         <p className="text-[10px] text-[var(--soil)] uppercase mb-2">
                           Error
                         </p>
                         <p className="text-[10px] text-[var(--khaki)]">
-                          {error}
+                          {identifyError}
                         </p>
                       </div>
                     ) : plantInfo ? (
@@ -238,31 +253,14 @@ export function CameraPage({ onBack }: CameraPageProps) {
                       </>
                     ) : null}
                   </div>
-                ) : (
-                  <div className="space-y-3">
-                    <div>
-                      <p className="text-[10px] text-[var(--bark)] uppercase mb-1">
-                        Health Status
-                      </p>
-                      <p className="text-[12px] text-[var(--sprout)]">
-                        HEALTHY
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-[10px] text-[var(--bark)] uppercase mb-1">
-                        Suggested Tasks
-                      </p>
-                      <ul className="text-[10px] text-[var(--soil)] space-y-1">
-                        <li>• Water within 2-3 days</li>
-                        <li>• Wipe leaves to remove dust</li>
-                        <li>
-                          • Consider repotting if root-bound
-                        </li>
-                      </ul>
-                    </div>
-                  </div>
                 )}
-              </div>
+              </>
+            ) : (
+              <DiagnosisPanel
+                diagnosis={diagnosis}
+                isLoading={isAnalyzing}
+                error={diagnosisError}
+              />
             )}
           </div>
         )}

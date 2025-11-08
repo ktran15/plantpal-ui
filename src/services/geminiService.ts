@@ -10,6 +10,13 @@ export interface PlantIdentificationResult {
   funFacts: string[];
 }
 
+export type PlantDiagnosis = {
+  summary: string;
+  issues: string[];
+  suggestions: string[];
+  confidence: number;
+};
+
 interface GeminiResponse {
   candidates: Array<{
     content: {
@@ -212,5 +219,156 @@ function parseGeminiResponse(text: string): PlantIdentificationResult {
   }
 
   return result;
+}
+
+/**
+ * Diagnoses a plant from an image using Gemini 2.5 Pro API
+ * @param imageBase64 - Base64 encoded image string (with or without data URL prefix)
+ * @returns Plant diagnosis result with health status, issues, and suggestions
+ */
+export async function diagnosePlant(
+  imageBase64: string
+): Promise<PlantDiagnosis> {
+  const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+
+  if (!apiKey) {
+    throw new Error("Gemini API key is not configured. Please set VITE_GEMINI_API_KEY in your .env file.");
+  }
+
+  // Remove data URL prefix if present (data:image/jpeg;base64,)
+  const base64Data = imageBase64.includes(",")
+    ? imageBase64.split(",")[1]
+    : imageBase64;
+
+  // Determine MIME type from base64 string
+  const mimeType = imageBase64.startsWith("data:image/png")
+    ? "image/png"
+    : imageBase64.startsWith("data:image/jpeg") || imageBase64.startsWith("data:image/jpg")
+    ? "image/jpeg"
+    : "image/jpeg"; // default
+
+  const prompt = `You are a professional botanist diagnosing a houseplant from a photo.
+
+Evaluate it based on:
+
+- Leaf color and texture
+- Stem condition
+- Soil moisture or discoloration
+- Common plant diseases (mold, rot, pests, nutrient deficiency)
+- Environmental stress (light, temperature, watering)
+
+If the plant looks healthy, say so clearly.
+If unhealthy, describe the problem and suggest concrete care tasks.
+
+Return your analysis in JSON with this format:
+{
+  "summary": "...",
+  "issues": ["..."],
+  "suggestions": ["..."],
+  "confidence": 0.0
+}`;
+
+  const requestBody = {
+    contents: [
+      {
+        parts: [
+          {
+            text: prompt,
+          },
+          {
+            inline_data: {
+              mime_type: mimeType,
+              data: base64Data,
+            },
+          },
+        ],
+      },
+    ],
+    generationConfig: {
+      response_mime_type: "application/json",
+    },
+  };
+
+  try {
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent?key=${apiKey}`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(requestBody),
+      }
+    );
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(
+        `Gemini API error: ${response.status} ${response.statusText}. ${JSON.stringify(errorData)}`
+      );
+    }
+
+    const data: GeminiResponse = await response.json();
+
+    if (
+      !data.candidates ||
+      !data.candidates[0] ||
+      !data.candidates[0].content ||
+      !data.candidates[0].content.parts ||
+      !data.candidates[0].content.parts[0]
+    ) {
+      throw new Error("Invalid response format from Gemini API");
+    }
+
+    const responseText = data.candidates[0].content.parts[0].text;
+
+    // Parse the JSON response
+    return parseDiagnosisResponse(responseText);
+  } catch (error) {
+    if (error instanceof Error) {
+      throw error;
+    }
+    throw new Error("Failed to diagnose plant: " + String(error));
+  }
+}
+
+/**
+ * Parses the Gemini API JSON response into PlantDiagnosis type
+ */
+function parseDiagnosisResponse(text: string): PlantDiagnosis {
+  try {
+    // Try to extract JSON from the response (in case there's extra text)
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    const jsonText = jsonMatch ? jsonMatch[0] : text;
+    
+    const parsed = JSON.parse(jsonText) as PlantDiagnosis;
+
+    // Validate and ensure all required fields exist
+    const diagnosis: PlantDiagnosis = {
+      summary: parsed.summary || "Unable to determine plant health status.",
+      issues: Array.isArray(parsed.issues) ? parsed.issues : [],
+      suggestions: Array.isArray(parsed.suggestions) ? parsed.suggestions : [],
+      confidence: typeof parsed.confidence === "number" ? parsed.confidence : 0.5,
+    };
+
+    // Ensure confidence is between 0 and 1
+    diagnosis.confidence = Math.max(0, Math.min(1, diagnosis.confidence));
+
+    // Ensure we have at least one suggestion
+    if (diagnosis.suggestions.length === 0) {
+      diagnosis.suggestions = ["Monitor the plant's condition regularly."];
+    }
+
+    return diagnosis;
+  } catch (error) {
+    // Fallback if JSON parsing fails
+    console.error("Failed to parse diagnosis JSON:", error);
+    return {
+      summary: "Unable to parse diagnosis response. Please try again.",
+      issues: [],
+      suggestions: ["Please try uploading another image for diagnosis."],
+      confidence: 0.0,
+    };
+  }
 }
 
