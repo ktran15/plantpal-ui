@@ -2,6 +2,7 @@ import { useState, useRef } from "react";
 import { Upload, ArrowLeft } from "lucide-react";
 import { PixelButton } from "./PixelButton";
 import { PixelCard } from "./PixelCard";
+import { identifyPlant, PlantIdentificationResult } from "../services/geminiService";
 
 interface CameraPageProps {
   onBack: () => void;
@@ -15,19 +16,38 @@ export function CameraPage({ onBack }: CameraPageProps) {
     string | null
   >(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [plantInfo, setPlantInfo] = useState<PlantIdentificationResult | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const handleFileSelect = (
+  const handleFileSelect = async (
     e: React.ChangeEvent<HTMLInputElement>,
   ) => {
     const file = e.target.files?.[0];
     if (file) {
       const reader = new FileReader();
-      reader.onload = (e) => {
-        setSelectedImage(e.target?.result as string);
-        // Simulate analysis
-        setIsAnalyzing(true);
-        setTimeout(() => setIsAnalyzing(false), 2000);
+      reader.onload = async (e) => {
+        const imageData = e.target?.result as string;
+        setSelectedImage(imageData);
+        setError(null);
+        setPlantInfo(null);
+        
+        // Only analyze if in identify mode
+        if (mode === "identify") {
+          setIsAnalyzing(true);
+          try {
+            const result = await identifyPlant(imageData);
+            setPlantInfo(result);
+          } catch (err) {
+            setError(err instanceof Error ? err.message : "Failed to identify plant");
+          } finally {
+            setIsAnalyzing(false);
+          }
+        } else {
+          // For diagnose mode, keep the mock behavior
+          setIsAnalyzing(true);
+          setTimeout(() => setIsAnalyzing(false), 2000);
+        }
       };
       reader.readAsDataURL(file);
     }
@@ -50,7 +70,11 @@ export function CameraPage({ onBack }: CameraPageProps) {
       {/* Mode Toggle */}
       <div className="flex gap-2 mb-6">
         <PixelButton
-          onClick={() => setMode("identify")}
+          onClick={() => {
+            setMode("identify");
+            setPlantInfo(null);
+            setError(null);
+          }}
           variant={
             mode === "identify" ? "primary" : "secondary"
           }
@@ -58,7 +82,11 @@ export function CameraPage({ onBack }: CameraPageProps) {
           IDENTIFY
         </PixelButton>
         <PixelButton
-          onClick={() => setMode("diagnose")}
+          onClick={() => {
+            setMode("diagnose");
+            setPlantInfo(null);
+            setError(null);
+          }}
           variant={
             mode === "diagnose" ? "primary" : "secondary"
           }
@@ -129,38 +157,86 @@ export function CameraPage({ onBack }: CameraPageProps) {
 
                 {mode === "identify" ? (
                   <div className="space-y-3">
-                    <div>
-                      <p className="text-[10px] text-[var(--bark)] uppercase mb-1">
-                        Common Name
-                      </p>
-                      <p className="text-[12px] text-[var(--soil)]">
-                        Monstera
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-[10px] text-[var(--bark)] uppercase mb-1">
-                        Latin Name
-                      </p>
-                      <p className="text-[12px] text-[var(--soil)]">
-                        Monstera deliciosa
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-[10px] text-[var(--bark)] uppercase mb-1">
-                        Quick Facts
-                      </p>
-                      <p className="text-[10px] text-[var(--soil)]">
-                        Native to tropical forests of Central
-                        America. Loves bright indirect light and
-                        regular watering.
-                      </p>
-                    </div>
-                    <PixelButton
-                      variant="primary"
-                      className="w-full mt-4"
-                    >
-                      ADD TO MY PLANTS
-                    </PixelButton>
+                    {error ? (
+                      <div className="p-4 bg-[var(--sand)] border-2 border-[var(--bark)]">
+                        <p className="text-[10px] text-[var(--soil)] uppercase mb-2">
+                          Error
+                        </p>
+                        <p className="text-[10px] text-[var(--khaki)]">
+                          {error}
+                        </p>
+                      </div>
+                    ) : plantInfo ? (
+                      <>
+                        <div>
+                          <p className="text-[10px] text-[var(--bark)] uppercase mb-1">
+                            Common Name
+                          </p>
+                          <p className="text-[12px] text-[var(--soil)]">
+                            {plantInfo.commonName}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-[10px] text-[var(--bark)] uppercase mb-1">
+                            Scientific Name
+                          </p>
+                          <p className="text-[12px] text-[var(--soil)]">
+                            {plantInfo.scientificName}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-[10px] text-[var(--bark)] uppercase mb-2">
+                            Care Instructions
+                          </p>
+                          <div className="space-y-2">
+                            <div>
+                              <p className="text-[9px] text-[var(--bark)] uppercase mb-1">
+                                Light
+                              </p>
+                              <p className="text-[10px] text-[var(--soil)]">
+                                {plantInfo.careInstructions.light || "Not specified"}
+                              </p>
+                            </div>
+                            <div>
+                              <p className="text-[9px] text-[var(--bark)] uppercase mb-1">
+                                Water
+                              </p>
+                              <p className="text-[10px] text-[var(--soil)]">
+                                {plantInfo.careInstructions.water || "Not specified"}
+                              </p>
+                            </div>
+                            <div>
+                              <p className="text-[9px] text-[var(--bark)] uppercase mb-1">
+                                Soil
+                              </p>
+                              <p className="text-[10px] text-[var(--soil)]">
+                                {plantInfo.careInstructions.soil || "Not specified"}
+                              </p>
+                            </div>
+                            <div>
+                              <p className="text-[9px] text-[var(--bark)] uppercase mb-1">
+                                Temperature
+                              </p>
+                              <p className="text-[10px] text-[var(--soil)]">
+                                {plantInfo.careInstructions.temperature || "Not specified"}
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                        {plantInfo.funFacts && plantInfo.funFacts.length > 0 && (
+                          <div>
+                            <p className="text-[10px] text-[var(--bark)] uppercase mb-2">
+                              Fun Facts
+                            </p>
+                            <ul className="text-[10px] text-[var(--soil)] space-y-1">
+                              {plantInfo.funFacts.map((fact, index) => (
+                                <li key={index}>• {fact}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                      </>
+                    ) : null}
                   </div>
                 ) : (
                   <div className="space-y-3">
