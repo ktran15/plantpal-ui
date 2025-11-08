@@ -1,0 +1,257 @@
+@import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
+
+@custom-variant dark (&:is(.dark *));
+
+:root {
+  --font-size: 16px;
+  
+  /* PlantPal Pixel Color Palette */
+  --sand: #E4B88B;
+  --leaf: #87B960;
+  --clay: #B76746;
+  --bark: #945341;
+  --soil: #6A3C33;
+  --fern: #3B7F4B;
+  --sand-2: #E5BC8E;
+  --khaki: #C29871;
+  --wheat: #C3A17C;
+  --sprout: #5FA244;
+  --eggshell: #E7EAD1;
+  --white: #FFFFFF;
+  
+  /* Semantic Colors */
+  --background: #E7EAD1; /* eggshell */
+  --foreground: #6A3C33; /* soil */
+  --card: #E5BC8E; /* sand-2 */
+  --card-foreground: #6A3C33;
+  --popover: #E5BC8E;
+  --popover-foreground: #6A3C33;
+  --primary: #5FA244; /* sprout */
+  --primary-foreground: #FFFFFF;
+  --secondary: #C3A17C; /* wheat */
+  --secondary-foreground: #6A3C33;
+  --muted: #C29871; /* khaki */
+  --muted-foreground: #945341;
+  --accent: #87B960; /* leaf */
+  --accent-foreground: #FFFFFF;
+  --destructive: #B76746; /* clay */
+  --destructive-foreground: #FFFFFF;
+  --border: #945341; /* bark */
+  --input: transparent;
+  --input-background: #E4B88B; /* sand */
+  --switch-background: #C29871;
+  --font-weight-medium: 400;
+  --font-weight-normal: 400;
+  --ring: #5FA244;
+  --chart-1: #87B960;
+  --chart-2: #5FA244;
+  --chart-3: #3B7F4B;
+  --chart-4: #E4B88B;
+  --chart-5: #C3A17C;
+  --radius: 2px; /* pixel corners */
+  --sidebar: #E5BC8E;
+  --sidebar-foreground: #6A3C33;
+  --sidebar-primary: #5FA244;
+  --sidebar-primary-foreground: #FFFFFF;
+  --sidebar-accent: #C3A17C;
+  --sidebar-accent-foreground: #6A3C33;
+  --sidebar-border: #945341;
+  --sidebar-ring: #5FA244;
+  
+  /* Text Sizes (pixel-friendly) */
+  --text-xs: 8px;
+  --text-sm: 10px;
+  --text-base: 12px;
+  --text-lg: 14px;
+  --text-xl: 16px;
+  --text-2xl: 20px;
+  --text-3xl: 24px;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-input-background: var(--input-background);
+  --color-switch-background: var(--switch-background);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --radius-sm: 0px;
+  --radius-md: 1px;
+  --radius-lg: 2px;
+  --radius-xl: 2px;
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+  
+  /* PlantPal specific colors */
+  --color-sand: var(--sand);
+  --color-leaf: var(--leaf);
+  --color-clay: var(--clay);
+  --color-bark: var(--bark);
+  --color-soil: var(--soil);
+  --color-fern: var(--fern);
+  --color-sand-2: var(--sand-2);
+  --color-khaki: var(--khaki);
+  --color-wheat: var(--wheat);
+  --color-sprout: var(--sprout);
+  --color-eggshell: var(--eggshell);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+    /* Pixel-perfect rendering */
+    image-rendering: pixelated;
+    image-rendering: -moz-crisp-edges;
+    image-rendering: crisp-edges;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-family: 'Press Start 2P', monospace;
+    -webkit-font-smoothing: none;
+    -moz-osx-font-smoothing: grayscale;
+  }
+  
+  img, svg {
+    image-rendering: pixelated;
+    image-rendering: -moz-crisp-edges;
+    image-rendering: crisp-edges;
+  }
+}
+
+/**
+ * Base typography. This is not applied to elements which have an ancestor with a Tailwind text class.
+ */
+@layer base {
+  :where(:not(:has([class*=' text-']), :not(:has([class^='text-'])))) {
+    h1 {
+      font-size: 20px;
+      font-weight: 400;
+      line-height: 1.4;
+      text-transform: uppercase;
+    }
+
+    h2 {
+      font-size: 16px;
+      font-weight: 400;
+      line-height: 1.4;
+      text-transform: uppercase;
+    }
+
+    h3 {
+      font-size: 14px;
+      font-weight: 400;
+      line-height: 1.4;
+      text-transform: uppercase;
+    }
+
+    h4 {
+      font-size: 12px;
+      font-weight: 400;
+      line-height: 1.4;
+      text-transform: uppercase;
+    }
+
+    p {
+      font-size: 12px;
+      font-weight: 400;
+      line-height: 1.6;
+    }
+
+    label {
+      font-size: 12px;
+      font-weight: 400;
+      line-height: 1.4;
+    }
+
+    button {
+      font-size: 12px;
+      font-weight: 400;
+      line-height: 1.4;
+      text-transform: uppercase;
+    }
+
+    input {
+      font-size: 12px;
+      font-weight: 400;
+      line-height: 1.4;
+    }
+  }
+}
+
+html {
+  font-size: var(--font-size);
+}
+
+/* Pixel-art specific utilities */
+.pixel-shadow {
+  box-shadow: 3px 3px 0 0 rgba(106, 60, 51, 0.3);
+}
+
+.pixel-shadow-sm {
+  box-shadow: 2px 2px 0 0 rgba(106, 60, 51, 0.3);
+}
+
+.pixel-border {
+  border: 2px solid var(--bark);
+}
+
+.pixel-border-light {
+  border: 2px solid var(--khaki);
+}
+
+.no-smooth {
+  -webkit-font-smoothing: none;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Pixel grid background pattern */
+.pixel-grid-bg {
+  background-image: 
+    repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 4px,
+      rgba(148, 83, 65, 0.03) 4px,
+      rgba(148, 83, 65, 0.03) 8px
+    ),
+    repeating-linear-gradient(
+      90deg,
+      transparent,
+      transparent 4px,
+      rgba(148, 83, 65, 0.03) 4px,
+      rgba(148, 83, 65, 0.03) 8px
+    );
+}
+
+/* Subtle dithering effect */
+.dithered-bg {
+  background-image: 
+    url("data:image/svg+xml,%3Csvg width='4' height='4' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M0 0h2v2H0zm2 2h2v2H2z' fill='%23945341' fill-opacity='0.05'/%3E%3C/svg%3E");
+}
