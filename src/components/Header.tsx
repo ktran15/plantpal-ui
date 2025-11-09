@@ -1,18 +1,26 @@
 import { PixelButton } from './PixelButton';
+import { AddPlantButton } from './AddPlantButton';
 import { Sprout, Camera, MessageSquare, Palette } from 'lucide-react';
 
 interface HeaderProps {
   onCameraClick: () => void;
   onMyPlantsClick: () => void;
   onAgentClick: () => void;
+  onAddPlantClick?: () => void;
   onShowcaseClick?: () => void;
 }
 
-export function Header({ onCameraClick, onMyPlantsClick, onAgentClick, onShowcaseClick }: HeaderProps) {
+export function Header({
+  onCameraClick,
+  onMyPlantsClick,
+  onAgentClick,
+  onAddPlantClick,
+  onShowcaseClick,
+}: HeaderProps) {
   return (
     <header className="border-b-2 border-[var(--bark)] bg-[var(--wheat)] px-4 py-3">
       <div className="max-w-7xl mx-auto flex items-center justify-between">
-        <button 
+        <button
           onClick={() => window.location.reload()}
           className="flex items-center gap-3 hover:scale-105 transition-transform"
         >
@@ -21,7 +29,7 @@ export function Header({ onCameraClick, onMyPlantsClick, onAgentClick, onShowcas
           </div>
           <h1 className="text-[16px] text-[var(--soil)]">PLANTPAL</h1>
         </button>
-        
+
         <nav className="flex items-center gap-2">
           {onShowcaseClick && (
             <button
@@ -31,6 +39,9 @@ export function Header({ onCameraClick, onMyPlantsClick, onAgentClick, onShowcas
             >
               <Palette className="w-4 h-4" strokeWidth={2.5} />
             </button>
+          )}
+          {onAddPlantClick && (
+            <AddPlantButton onClick={onAddPlantClick} />
           )}
           <PixelButton onClick={onMyPlantsClick} variant="secondary" size="sm">
             MY PLANTS

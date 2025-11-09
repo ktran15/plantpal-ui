@@ -1,19 +1,13 @@
 import { PlantCard } from './PlantCard';
-
-interface Plant {
-  id: string;
-  name: string;
-  species: string;
-  xp: number;
-  state: 'happy' | 'neutral' | 'sad' | 'sick' | 'evolving';
-}
+import { Plant } from '../types/plant';
 
 interface MyPlantsPageProps {
   plants: Plant[];
   onPlantClick: (plantId: string) => void;
+  onDeletePlant: (plantId: string) => void;
 }
 
-export function MyPlantsPage({ plants, onPlantClick }: MyPlantsPageProps) {
+export function MyPlantsPage({ plants, onPlantClick, onDeletePlant }: MyPlantsPageProps) {
   return (
     <div className="max-w-7xl mx-auto p-4 md:p-6">
       <div className="mb-6">
@@ -42,7 +36,9 @@ export function MyPlantsPage({ plants, onPlantClick }: MyPlantsPageProps) {
               species={plant.species}
               xp={plant.xp}
               state={plant.state}
+              spriteUrl={plant.spriteUrl}
               onClick={() => onPlantClick(plant.id)}
+              onDelete={() => onDeletePlant(plant.id)}
             />
           ))}
         </div>
