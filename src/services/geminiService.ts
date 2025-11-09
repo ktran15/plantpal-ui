@@ -18,13 +18,25 @@ export type PlantDiagnosis = {
   confidence: number;
 };
 
+export interface PlantPalResponse {
+  response_text: string;
+  plant_avatar: string; // Image path for PlantPal avatar
+}
+
+export interface ChatMessage {
+  role: "user" | "model";
+  parts: Array<{ text: string }>;
+}
+
 interface GeminiResponse {
-  candidates: Array<{
-    content: {
-      parts: Array<{
-        text: string;
+  candidates?: Array<{
+    content?: {
+      parts?: Array<{
+        text?: string;
       }>;
+      text?: string;
     };
+    output?: string;
   }>;
 }
 
@@ -113,17 +125,18 @@ Fun Facts:
 
     const data: GeminiResponse = await response.json();
 
-    if (
-      !data.candidates ||
-      !data.candidates[0] ||
-      !data.candidates[0].content ||
-      !data.candidates[0].content.parts ||
-      !data.candidates[0].content.parts[0]
-    ) {
+    const candidate = data.candidates?.[0];
+    const part = candidate?.content?.parts?.[0];
+    const responseText =
+      part?.text?.trim() ||
+      candidate?.content?.text?.trim() ||
+      candidate?.output?.trim() ||
+      "";
+
+    if (!responseText) {
+      console.error("Unexpected Gemini response format:", JSON.stringify(data, null, 2));
       throw new Error("Invalid response format from Gemini API");
     }
-
-    const responseText = data.candidates[0].content.parts[0].text;
 
     // Parse the response text into structured format
     return parseGeminiResponse(responseText);
@@ -317,17 +330,18 @@ Return your analysis in JSON with this format:
 
     const data: GeminiResponse = await response.json();
 
-    if (
-      !data.candidates ||
-      !data.candidates[0] ||
-      !data.candidates[0].content ||
-      !data.candidates[0].content.parts ||
-      !data.candidates[0].content.parts[0]
-    ) {
+    const candidate = data.candidates?.[0];
+    const part = candidate?.content?.parts?.[0];
+    const responseText =
+      part?.text?.trim() ||
+      candidate?.content?.text?.trim() ||
+      candidate?.output?.trim() ||
+      "";
+
+    if (!responseText) {
+      console.error("Unexpected Gemini response format:", JSON.stringify(data, null, 2));
       throw new Error("Invalid response format from Gemini API");
     }
-
-    const responseText = data.candidates[0].content.parts[0].text;
 
     // Parse the JSON response
     return parseDiagnosisResponse(responseText);
@@ -398,6 +412,128 @@ function parseDiagnosisResponse(text: string): PlantDiagnosis {
       issues: [],
       suggestions: ["Please try uploading another image for diagnosis."],
       confidence: 0.0,
+    };
+  }
+}
+
+/**
+ * Chats with PlantPal using Gemini 2.5 Pro API
+ * @param userQuestion - The user's text question
+ * @param conversationHistory - Optional array of previous messages for context
+ * @returns PlantPal response with text and avatar identifier
+ */
+export async function chatWithPlantPal(
+  userQuestion: string,
+  conversationHistory: ChatMessage[] = []
+): Promise<PlantPalResponse> {
+  const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+
+  if (!apiKey) {
+    throw new Error("Gemini API key is not configured. Please set VITE_GEMINI_API_KEY in your .env file.");
+  }
+
+  const systemInstruction = `You are PlantPal, a friendly AI assistant specialized in plant care. Your goal is to answer user questions in a friendly, approachable manner, making it look like the user is chatting with a little plant.
+
+Requirements:
+- Answer questions about plants, care, and related topics accurately and concisely
+- Maintain a friendly, approachable tone suitable for all users
+- Keep text responses under 150 words
+- Focus on practical, helpful advice
+- Use emojis sparingly (🌱 🌿 ✨) to add warmth but don't overuse them
+
+If asked about non-plant topics, politely redirect to plant-related subjects or offer to help with plant care instead.`;
+
+  // Build conversation contents
+  const contents: Array<{ role: string; parts: Array<{ text: string }> }> = [];
+
+  if (conversationHistory.length > 0) {
+    const recentHistory = conversationHistory.slice(-3);
+    recentHistory.forEach(msg => {
+      contents.push({
+        role: msg.role === "user" ? "user" : "model",
+        parts: msg.parts,
+      });
+    });
+  }
+
+  contents.push({ role: "user", parts: [{ text: userQuestion }] });
+
+  const requestBody = {
+    contents,
+    systemInstruction: { parts: [{ text: systemInstruction }] },
+    generationConfig: { maxOutputTokens: 1000, temperature: 0.7 },
+  };
+
+  // Helper to safely extract text from Gemini response
+  function extractGeminiText(data: GeminiResponse): string | null {
+    if (!data.candidates) return null;
+
+    for (const candidate of data.candidates) {
+      // Try content.parts first
+      const parts = candidate?.content?.parts;
+      if (parts && parts.length > 0) {
+        const text = parts.map(p => p.text).filter(Boolean).join("\n").trim();
+        if (text) return text;
+      }
+
+      // Fallback to content.text
+      const textContent = candidate?.content?.text?.trim();
+      if (textContent) return textContent;
+
+      // Fallback to output
+      const outputText = candidate?.output?.trim();
+      if (outputText) return outputText;
+    }
+
+    return null;
+  }
+
+  try {
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent?key=${apiKey}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(requestBody),
+      }
+    );
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(
+        `Gemini API error: ${response.status} ${response.statusText}. ${JSON.stringify(errorData)}`
+      );
+    }
+
+    const data: any = await response.json();
+    console.log("===== GEMINI RAW RESPONSE =====");
+    console.log(JSON.stringify(data, null, 2));
+
+
+    const responseText =
+      extractGeminiText(data) ||
+      (data.response?.text?.() ?? "") ||
+      "Sorry, I'm having trouble right now. Please try again!";
+
+
+    if (!responseText) {
+      console.error("Unexpected Gemini response format:", JSON.stringify(data, null, 2));
+      throw new Error("Invalid response format from Gemini API");
+    }
+
+    // Truncate to ~150 words
+    const words = responseText.split(/\s+/);
+    const finalResponse = words.length > 150 ? words.slice(0, 150).join(" ") + "..." : responseText;
+
+    return {
+      response_text: finalResponse,
+      plant_avatar: "🌿",
+    };
+  } catch (error) {
+    console.error("Gemini chat error:", error);
+    return {
+      response_text: "Sorry, I'm having trouble right now. Please try again!",
+      plant_avatar: "🌿",
     };
   }
 }

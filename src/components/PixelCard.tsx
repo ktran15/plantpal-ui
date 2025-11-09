@@ -2,6 +2,7 @@ import { HTMLAttributes } from 'react';
 
 interface PixelCardProps extends HTMLAttributes<HTMLDivElement> {
   variant?: 'default' | 'dark' | 'light';
+  className?: string;
 }
 
 export function PixelCard({ variant = 'default', className = '', children, ...props }: PixelCardProps) {

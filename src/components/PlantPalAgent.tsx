@@ -1,8 +1,10 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { X, Send } from 'lucide-react';
 import { PixelButton } from './PixelButton';
 import { PixelInput } from './PixelInput';
 import { PixelCard } from './PixelCard';
+import { chatWithPlantPal, ChatMessage } from '../services/geminiService';
+import plantPalImage from '../assets/PlantPalPlant.png';
 
 interface PlantPalAgentProps {
   isOpen: boolean;
@@ -13,14 +15,17 @@ interface Message {
   id: string;
   text: string;
   sender: 'user' | 'agent';
+  avatar?: string; // PlantPal avatar for agent messages
 }
 
 export function PlantPalAgent({ isOpen, onClose }: PlantPalAgentProps) {
   const [messages, setMessages] = useState<Message[]>([
-    { id: '1', text: 'Hi there! 🌱 I\'m your PlantPal.', sender: 'agent' },
-    { id: '2', text: 'I can help you identify plants, diagnose issues, and give care tips. What do you need help with?', sender: 'agent' }
+    { id: '1', text: 'Hi there! 🌱 I\'m your PlantPal.', sender: 'agent', avatar: '🌿' },
+    { id: '2', text: 'I can help you identify plants, diagnose issues, and give care tips. What do you need help with?', sender: 'agent', avatar: '🌿' }
   ]);
   const [input, setInput] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     const handleEscape = (e: KeyboardEvent) => {
@@ -33,26 +38,56 @@ export function PlantPalAgent({ isOpen, onClose }: PlantPalAgentProps) {
     return () => window.removeEventListener('keydown', handleEscape);
   }, [isOpen, onClose]);
 
-  const sendMessage = () => {
-    if (!input.trim()) return;
+  const sendMessage = async () => {
+    if (!input.trim() || isLoading) return;
     
+    const userQuestion = input.trim();
     const newMessage: Message = {
       id: Date.now().toString(),
-      text: input,
+      text: userQuestion,
       sender: 'user'
     };
     
-    setMessages([...messages, newMessage]);
+    setMessages(prev => [...prev, newMessage]);
     setInput('');
+    setIsLoading(true);
+    setError(null);
     
-    // Simulate agent response
-    setTimeout(() => {
-      setMessages(prev => [...prev, {
+    try {
+      // Build conversation history for context
+      const conversationHistory: ChatMessage[] = messages
+        .filter(msg => msg.sender === 'agent' || msg.sender === 'user')
+        .slice(-4) // Last 4 messages for context
+        .map(msg => ({
+          role: msg.sender === 'user' ? 'user' : 'model',
+          parts: [{ text: msg.text }]
+        }));
+      
+      const response = await chatWithPlantPal(userQuestion, conversationHistory);
+      
+      const agentMessage: Message = {
         id: (Date.now() + 1).toString(),
-        text: 'I\'m here to help! This feature will use AI to answer your plant care questions.',
-        sender: 'agent'
-      }]);
-    }, 500);
+        text: response.response_text,
+        sender: 'agent',
+        avatar: response.plant_avatar || '🌿'
+      };
+      
+      setMessages(prev => [...prev, agentMessage]);
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to get response from PlantPal';
+      setError(errorMessage);
+      
+      const errorAgentMessage: Message = {
+        id: (Date.now() + 1).toString(),
+        text: `Sorry, I'm having trouble right now. ${errorMessage}. Please try again!`,
+        sender: 'agent',
+        avatar: '🌿'
+      };
+      
+      setMessages(prev => [...prev, errorAgentMessage]);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   if (!isOpen) return null;
@@ -64,8 +99,12 @@ export function PlantPalAgent({ isOpen, onClose }: PlantPalAgentProps) {
           {/* Agent Header */}
           <div className="border-b-2 border-[var(--bark)] p-4 bg-[var(--wheat)] flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-[var(--sprout)] pixel-border-light flex items-center justify-center">
-                <span className="text-[20px]">🌿</span>
+              <div className="w-10 h-10 bg-[var(--sprout)] pixel-border-light flex items-center justify-center overflow-hidden">
+                <img 
+                  src={plantPalImage} 
+                  alt="PlantPal" 
+                  className="w-full h-full object-contain"
+                />
               </div>
               <div>
                 <h3 className="text-[12px] text-[var(--soil)] uppercase">PlantPal</h3>
@@ -85,8 +124,17 @@ export function PlantPalAgent({ isOpen, onClose }: PlantPalAgentProps) {
             {messages.map((message) => (
               <div
                 key={message.id}
-                className={`flex ${message.sender === 'user' ? 'justify-end' : 'justify-start'}`}
+                className={`flex items-start gap-2 ${message.sender === 'user' ? 'justify-end' : 'justify-start'}`}
               >
+                {message.sender === 'agent' && (
+                  <div className="w-12 h-12 bg-[var(--sprout)] pixel-border-light flex items-center justify-center flex-shrink-0 overflow-hidden">
+                    <img 
+                      src={plantPalImage} 
+                      alt="PlantPal" 
+                      className="w-full h-full object-contain"
+                    />
+                  </div>
+                )}
                 <div
                   className={`max-w-[80%] px-3 py-2 pixel-border text-[10px] ${
                     message.sender === 'user'
@@ -96,8 +144,43 @@ export function PlantPalAgent({ isOpen, onClose }: PlantPalAgentProps) {
                 >
                   {message.text}
                 </div>
+                {message.sender === 'user' && (
+                  <div className="w-12 h-12 flex-shrink-0">{/* Spacer for alignment */}</div>
+                )}
               </div>
             ))}
+            {isLoading && (
+              <div className="flex items-start gap-2 justify-start">
+                <div className="w-12 h-12 bg-[var(--sprout)] pixel-border-light flex items-center justify-center flex-shrink-0 overflow-hidden">
+                  <img 
+                    src={plantPalImage} 
+                    alt="PlantPal" 
+                    className="w-full h-full object-contain"
+                  />
+                </div>
+                <div className="bg-[var(--sand-2)] pixel-border px-3 py-2 flex items-center gap-2">
+                  <div className="flex gap-1">
+                    {[0, 1, 2].map((i) => (
+                      <div
+                        key={i}
+                        className="w-2 h-2 bg-[var(--sprout)] pixel-border animate-bounce"
+                        style={{
+                          animationDelay: `${i * 0.15}s`,
+                          animationDuration: '0.6s'
+                        }}
+                      />
+                    ))}
+                  </div>
+                  <p className="text-[9px] text-[var(--khaki)] uppercase">Thinking...</p>
+                </div>
+              </div>
+            )}
+            {error && !isLoading && (
+              <div className="p-3 bg-[var(--sand)] border-2 border-[var(--bark)]">
+                <p className="text-[9px] text-[var(--soil)] uppercase mb-1">Error</p>
+                <p className="text-[9px] text-[var(--khaki)]">{error}</p>
+              </div>
+            )}
           </div>
 
           {/* Input */}
@@ -109,7 +192,12 @@ export function PlantPalAgent({ isOpen, onClose }: PlantPalAgentProps) {
               placeholder="Ask me anything..."
               className="flex-1 text-[10px]"
             />
-            <PixelButton onClick={sendMessage} variant="primary" size="sm">
+            <PixelButton 
+              onClick={sendMessage} 
+              variant="primary" 
+              size="sm"
+              disabled={isLoading}
+            >
               <Send className="w-4 h-4" strokeWidth={2.5} />
             </PixelButton>
           </div>
