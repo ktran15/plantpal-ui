@@ -12,6 +12,7 @@ export interface PlantIdentificationResult {
 
 export type PlantDiagnosis = {
   summary: string;
+  status: "healthy" | "needs_attention" | "diseased";
   issues: string[];
   suggestions: string[];
   confidence: number;
@@ -257,12 +258,18 @@ Evaluate it based on:
 - Common plant diseases (mold, rot, pests, nutrient deficiency)
 - Environmental stress (light, temperature, watering)
 
-If the plant looks healthy, say so clearly.
+Determine the plant's health status:
+- "healthy": Plant appears in good condition with no visible issues
+- "needs_attention": Minor issues detected (e.g., slight yellowing, dry soil, small pests)
+- "diseased": Serious problems detected (e.g., severe disease, rot, major pest infestation)
+
+If the plant looks healthy, say so clearly and set status to "healthy".
 If unhealthy, describe the problem and suggest concrete care tasks.
 
 Return your analysis in JSON with this format:
 {
   "summary": "...",
+  "status": "healthy" | "needs_attention" | "diseased",
   "issues": ["..."],
   "suggestions": ["..."],
   "confidence": 0.0
@@ -341,11 +348,29 @@ function parseDiagnosisResponse(text: string): PlantDiagnosis {
     const jsonMatch = text.match(/\{[\s\S]*\}/);
     const jsonText = jsonMatch ? jsonMatch[0] : text;
     
-    const parsed = JSON.parse(jsonText) as PlantDiagnosis;
+    const parsed = JSON.parse(jsonText) as Partial<PlantDiagnosis>;
+
+    // Validate status field
+    let status: "healthy" | "needs_attention" | "diseased" = "needs_attention";
+    if (parsed.status && ["healthy", "needs_attention", "diseased"].includes(parsed.status)) {
+      status = parsed.status;
+    } else {
+      // Fallback: infer status from issues and summary
+      const hasIssues = Array.isArray(parsed.issues) && parsed.issues.length > 0;
+      const summaryText = (parsed.summary || "").toLowerCase();
+      if (!hasIssues && (summaryText.includes("healthy") || summaryText.includes("good condition"))) {
+        status = "healthy";
+      } else if (hasIssues && (summaryText.includes("disease") || summaryText.includes("rot") || summaryText.includes("severe"))) {
+        status = "diseased";
+      } else {
+        status = "needs_attention";
+      }
+    }
 
     // Validate and ensure all required fields exist
     const diagnosis: PlantDiagnosis = {
       summary: parsed.summary || "Unable to determine plant health status.",
+      status: status,
       issues: Array.isArray(parsed.issues) ? parsed.issues : [],
       suggestions: Array.isArray(parsed.suggestions) ? parsed.suggestions : [],
       confidence: typeof parsed.confidence === "number" ? parsed.confidence : 0.5,
@@ -356,7 +381,11 @@ function parseDiagnosisResponse(text: string): PlantDiagnosis {
 
     // Ensure we have at least one suggestion
     if (diagnosis.suggestions.length === 0) {
-      diagnosis.suggestions = ["Monitor the plant's condition regularly."];
+      if (diagnosis.status === "healthy") {
+        diagnosis.suggestions = ["Continue regular care and monitoring."];
+      } else {
+        diagnosis.suggestions = ["Monitor the plant's condition regularly."];
+      }
     }
 
     return diagnosis;
@@ -365,6 +394,7 @@ function parseDiagnosisResponse(text: string): PlantDiagnosis {
     console.error("Failed to parse diagnosis JSON:", error);
     return {
       summary: "Unable to parse diagnosis response. Please try again.",
+      status: "needs_attention",
       issues: [],
       suggestions: ["Please try uploading another image for diagnosis."],
       confidence: 0.0,

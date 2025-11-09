@@ -31,9 +31,13 @@ export function DiagnosisPanel({
     return null;
   }
 
-  // Determine if plant is healthy based on summary
-  const isHealthy = diagnosis.summary.toLowerCase().includes("healthy") &&
-    diagnosis.issues.length === 0;
+  const isHealthy = diagnosis.status === "healthy";
+  const statusLabel = 
+    diagnosis.status === "healthy" 
+      ? "HEALTHY" 
+      : diagnosis.status === "diseased"
+      ? "DISEASED"
+      : "NEEDS ATTENTION";
 
   return (
     <div className="space-y-3">
@@ -47,7 +51,7 @@ export function DiagnosisPanel({
             isHealthy ? "text-[var(--sprout)]" : "text-[var(--soil)]"
           }`}
         >
-          {isHealthy ? "HEALTHY" : "NEEDS ATTENTION"}
+          {statusLabel}
         </p>
       </div>
 
@@ -59,8 +63,8 @@ export function DiagnosisPanel({
         <p className="text-[10px] text-[var(--soil)]">{diagnosis.summary}</p>
       </div>
 
-      {/* Issues */}
-      {diagnosis.issues.length > 0 && (
+      {/* Issues - Only show if not healthy */}
+      {!isHealthy && diagnosis.issues.length > 0 && (
         <div>
           <p className="text-[10px] text-[var(--bark)] uppercase mb-2">
             Issues Detected
@@ -76,7 +80,7 @@ export function DiagnosisPanel({
       {/* Suggestions */}
       <div>
         <p className="text-[10px] text-[var(--bark)] uppercase mb-2">
-          Suggested Care Tasks
+          {isHealthy ? "Care Recommendations" : "Suggested Care Tasks"}
         </p>
         <ul className="text-[10px] text-[var(--soil)] space-y-1">
           {diagnosis.suggestions.map((suggestion, index) => (

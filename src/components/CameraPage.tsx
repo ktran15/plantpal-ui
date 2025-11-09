@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { Upload, ArrowLeft } from "lucide-react";
 import { PixelButton } from "./PixelButton";
 import { PixelCard } from "./PixelCard";
@@ -19,9 +19,11 @@ export function CameraPage({ onBack }: CameraPageProps) {
   const [mode, setMode] = useState<"diagnose" | "identify">(
     "identify",
   );
-  const [selectedImage, setSelectedImage] = useState<
-    string | null
-  >(null);
+  
+  // Separate image states for identify and diagnose
+  const [identifyImage, setIdentifyImage] = useState<string | null>(null);
+  const [diagnoseImage, setDiagnoseImage] = useState<string | null>(null);
+  
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   
   // Separate state for identify and diagnose results
@@ -33,13 +35,26 @@ export function CameraPage({ onBack }: CameraPageProps) {
   
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Reset all state when component unmounts (user navigates away)
+  useEffect(() => {
+    return () => {
+      setPlantInfo(null);
+      setIdentifyError(null);
+      setDiagnosis(null);
+      setDiagnosisError(null);
+      setIdentifyImage(null);
+      setDiagnoseImage(null);
+    };
+  }, []);
+
   // Reset all results when leaving the page
   const handleBack = () => {
     setPlantInfo(null);
     setIdentifyError(null);
     setDiagnosis(null);
     setDiagnosisError(null);
-    setSelectedImage(null);
+    setIdentifyImage(null);
+    setDiagnoseImage(null);
     onBack();
   };
 
@@ -51,9 +66,9 @@ export function CameraPage({ onBack }: CameraPageProps) {
       const reader = new FileReader();
       reader.onload = async (e) => {
         const imageData = e.target?.result as string;
-        setSelectedImage(imageData);
         
         if (mode === "identify") {
+          setIdentifyImage(imageData);
           // Clear only identify-related errors
           setIdentifyError(null);
           setIsAnalyzing(true);
@@ -66,6 +81,7 @@ export function CameraPage({ onBack }: CameraPageProps) {
             setIsAnalyzing(false);
           }
         } else {
+          setDiagnoseImage(imageData);
           // Clear only diagnosis-related errors
           setDiagnosisError(null);
           setIsAnalyzing(true);
@@ -80,6 +96,10 @@ export function CameraPage({ onBack }: CameraPageProps) {
         }
       };
       reader.readAsDataURL(file);
+    }
+    // Reset file input so same file can be selected again
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
     }
   };
 
@@ -123,9 +143,9 @@ export function CameraPage({ onBack }: CameraPageProps) {
           onClick={() => fileInputRef.current?.click()}
           className="border-2 border-dashed border-[var(--bark)] bg-[var(--sand)] p-12 cursor-pointer hover:bg-[var(--khaki)] transition-colors flex flex-col items-center justify-center min-h-[300px]"
         >
-          {selectedImage ? (
+          {(mode === "identify" ? identifyImage : diagnoseImage) ? (
             <img
-              src={selectedImage}
+              src={mode === "identify" ? identifyImage : diagnoseImage}
               alt="Selected plant"
               className="max-h-[400px] object-contain"
             />
@@ -158,7 +178,7 @@ export function CameraPage({ onBack }: CameraPageProps) {
         />
 
         {/* Analysis Results */}
-        {selectedImage && (
+        {(mode === "identify" ? identifyImage : diagnoseImage) && (
           <div className="mt-6 pt-6 border-t-2 border-[var(--bark)]">
             <h3 className="text-[14px] text-[var(--soil)] uppercase mb-4">
               {mode === "identify"
