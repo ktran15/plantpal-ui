@@ -1,7 +1,19 @@
 import { PlantAgentRequest, PlantAgentResponse } from '../types/plant';
 import { auth } from '../lib/firebase-client';
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
+// Dynamic API URL - uses same host as frontend, just different port
+const getApiBaseUrl = () => {
+  // If env variable is set, use it
+  if (import.meta.env.VITE_API_BASE_URL) {
+    return import.meta.env.VITE_API_BASE_URL;
+  }
+  
+  // Otherwise, use current hostname with port 3001
+  const hostname = window.location.hostname;
+  return `http://${hostname}:3001`;
+};
+
+const API_BASE_URL = getApiBaseUrl();
 
 /**
  * Get Firebase auth token
@@ -36,6 +48,12 @@ export async function callPlantAgent(
       headers['Authorization'] = `Bearer ${token}`;
     }
 
+    console.log('Calling Plant Agent API:', {
+      url: `${API_BASE_URL}/api/vertex/plant-agent`,
+      action: request.action,
+      plantId: request.plantId,
+    });
+
     const response = await fetch(`${API_BASE_URL}/api/vertex/plant-agent`, {
       method: 'POST',
       headers,
@@ -44,15 +62,19 @@ export async function callPlantAgent(
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
-      throw new Error(
-        errorData.error || errorData.message || `API error: ${response.status} ${response.statusText}`
-      );
+      const errorMsg = errorData.error || errorData.message || `API error: ${response.status} ${response.statusText}`;
+      console.error('API error response:', errorData);
+      throw new Error(errorMsg);
     }
 
     const data: PlantAgentResponse = await response.json();
+    console.log('API response:', data);
     return data;
   } catch (error) {
     console.error('Plant agent API call failed:', error);
+    if (error instanceof Error && error.message.includes('Failed to fetch')) {
+      throw new Error('API server not responding. Make sure "npm run server" is running on port 3001.');
+    }
     throw error;
   }
 }

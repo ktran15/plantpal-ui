@@ -1,40 +1,32 @@
 import admin from 'firebase-admin';
 import { getFirestore, Timestamp } from 'firebase-admin/firestore';
 import { getStorage } from 'firebase-admin/storage';
+import * as path from 'path';
+import * as fs from 'fs';
 
 // Initialize Firebase Admin SDK
 if (!admin.apps.length) {
   try {
-    // Check if we have environment variables for Firebase Admin
-    const projectId = process.env.FIREBASE_PROJECT_ID;
-    const privateKey = process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n');
-    const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
-
-    if (projectId && privateKey && clientEmail) {
-      // Initialize with service account credentials from environment
+    // Use service account JSON file directly (most reliable)
+    const serviceAccountPath = path.resolve(__dirname, '../../keys/firebase-service-account.json');
+    
+    if (fs.existsSync(serviceAccountPath)) {
+      const serviceAccount = JSON.parse(fs.readFileSync(serviceAccountPath, 'utf8'));
+      
       admin.initializeApp({
-        credential: admin.credential.cert({
-          projectId,
-          privateKey,
-          clientEmail,
-        }),
-        storageBucket: process.env.FIREBASE_STORAGE_BUCKET || `${projectId}.appspot.com`,
+        credential: admin.credential.cert(serviceAccount),
+        storageBucket: `${serviceAccount.project_id}.appspot.com`,
       });
-    } else if (process.env.GOOGLE_APPLICATION_CREDENTIALS) {
-      // Initialize with service account key file
-      admin.initializeApp({
-        credential: admin.credential.applicationDefault(),
-        storageBucket: process.env.FIREBASE_STORAGE_BUCKET,
-      });
+      
+      console.log('✅ Firebase Admin initialized successfully');
+      console.log(`   Project: ${serviceAccount.project_id}`);
+      console.log(`   Storage: ${serviceAccount.project_id}.appspot.com`);
     } else {
-      // Fallback: try to use default credentials (for local development with gcloud auth)
-      console.warn('Firebase Admin: Using default credentials. Make sure GOOGLE_APPLICATION_CREDENTIALS is set or use environment variables.');
-      admin.initializeApp({
-        storageBucket: process.env.FIREBASE_STORAGE_BUCKET,
-      });
+      throw new Error(`Service account file not found at: ${serviceAccountPath}`);
     }
   } catch (error) {
-    console.error('Failed to initialize Firebase Admin:', error);
+    console.error('❌ Failed to initialize Firebase Admin:', error);
+    console.error('   Make sure keys/firebase-service-account.json exists');
     throw error;
   }
 }

@@ -6,9 +6,9 @@ import plantAgentRouter from './src/api/vertex/plant-agent';
 const app = express();
 const PORT = process.env.API_PORT || 3001;
 
-// Middleware
+// Middleware - Allow all origins in development
 app.use(cors({
-  origin: process.env.FRONTEND_URL || 'http://localhost:3000',
+  origin: true, // Allow all origins for development/demo
   credentials: true,
 }));
 app.use(express.json());

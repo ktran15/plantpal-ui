@@ -8,19 +8,36 @@ import { storage, auth } from '../lib/firebase-client';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { getHappinessColor, getHappinessStatusText } from '../utils/happiness';
 import { CareRecommendations, Plant } from '../types/plant';
+import { analyzePlantPhoto, generateSchedule } from '../services/plantAgentService';
+import { usePlantContext } from '../contexts/PlantContext';
 import { toast } from 'sonner';
 
 interface PlantDetailPageProps {
-  plant: Plant; // Accept plant data directly
+  plant: Plant; // localStorage plant for fallback
   onBack: () => void;
 }
 
-export function PlantDetailPage({ plant, onBack }: PlantDetailPageProps) {
+export function PlantDetailPage({ plant: localPlant, onBack }: PlantDetailPageProps) {
   const [activeTab, setActiveTab] = useState<'overview' | 'tasks' | 'stats' | 'photos'>('overview');
   const [careRecommendations, setCareRecommendations] = useState<CareRecommendations | null>(null);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [loadingRecommendations, setLoadingRecommendations] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  
+  // Try to fetch Firestore plant data
+  const { plant: firestorePlant, tasks, loading, fetchPlant, subscribeToPlant, subscribeToTasks } = usePlantContext();
+
+  // Fetch from Firestore on mount
+  useEffect(() => {
+    fetchPlant(localPlant.id);
+    const unsubscribePlant = subscribeToPlant(localPlant.id);
+    const unsubscribeTasks = subscribeToTasks(localPlant.id);
+
+    return () => {
+      unsubscribePlant();
+      unsubscribeTasks();
+    };
+  }, [localPlant.id, fetchPlant, subscribeToPlant, subscribeToTasks]);
 
   // Fetch care recommendations when component mounts
   useEffect(() => {
@@ -61,19 +78,34 @@ export function PlantDetailPage({ plant, onBack }: PlantDetailPageProps) {
 
     setUploadingPhoto(true);
     try {
-      const user = auth.currentUser;
-      if (!user) {
-        toast.error('Firebase Auth not set up yet. Photo upload coming soon!');
-        setUploadingPhoto(false);
-        return;
-      }
+      // For development: allow photo uploads without auth
+      const userId = auth?.currentUser?.uid || 'local-user';
 
       // Upload to Firebase Storage
-      const storageRef = ref(storage, `plants/${plant.id}/${Date.now()}_${file.name}`);
+      const storageRef = ref(storage!, `plants/${userId}/${plant.id}/${Date.now()}_${file.name}`);
       await uploadBytes(storageRef, file);
       const downloadURL = await getDownloadURL(storageRef);
 
       toast.success('Photo uploaded! 📸');
+      console.log('Photo uploaded to:', downloadURL);
+
+      // Try to analyze photo with AI (only if plant is in Firestore)
+      try {
+        const response = await analyzePlantPhoto(userId, localPlant.id, downloadURL);
+        if (response.happiness !== undefined) {
+          toast.success(`AI Analysis: Happiness ${response.happiness}/100!`, {
+            duration: 5000,
+          });
+          if (response.recommendations) {
+            console.log('AI Recommendations:', response.recommendations);
+          }
+          // Refresh plant data to show new happiness
+          fetchPlant(localPlant.id);
+        }
+      } catch (aiError) {
+        console.log('AI analysis error:', aiError);
+        toast.error('Photo uploaded but AI analysis failed. Check API server logs.');
+      }
     } catch (err) {
       console.error('Photo upload error:', err);
       toast.error('Failed to upload photo');
@@ -85,17 +117,32 @@ export function PlantDetailPage({ plant, onBack }: PlantDetailPageProps) {
     }
   };
 
-  // Calculate days in care (from localStorage plant)
+  // Calculate days in care
   const getDaysInCare = (): number => {
-    if (!plant?.createdAt) return 0;
-    const created = new Date(plant.createdAt); // createdAt is a string in localStorage
-    const now = new Date();
-    const diffTime = Math.abs(now.getTime() - created.getTime());
-    return Math.floor(diffTime / (1000 * 60 * 60 * 24));
+    if (isFirestorePlant && firestorePlant.createdAt) {
+      const created = firestorePlant.createdAt.toDate();
+      const now = new Date();
+      const diffTime = Math.abs(now.getTime() - created.getTime());
+      return Math.floor(diffTime / (1000 * 60 * 60 * 24));
+    } else if (localPlant.createdAt) {
+      const created = new Date(localPlant.createdAt);
+      const now = new Date();
+      const diffTime = Math.abs(now.getTime() - created.getTime());
+      return Math.floor(diffTime / (1000 * 60 * 60 * 24));
+    }
+    return 0;
   };
 
-  // Format last action (not tracked in localStorage yet)
+  // Format last action
   const formatLastAction = (): string => {
+    if (isFirestorePlant && firestorePlant.lastWatered) {
+      const date = firestorePlant.lastWatered.toDate();
+      const now = new Date();
+      const diffDays = Math.floor((now.getTime() - date.getTime()) / (1000 * 60 * 60 * 24));
+      if (diffDays === 0) return 'Today';
+      if (diffDays === 1) return '1 day ago';
+      return `${diffDays} days ago`;
+    }
     return 'Not tracked yet';
   };
 
@@ -106,8 +153,14 @@ export function PlantDetailPage({ plant, onBack }: PlantDetailPageProps) {
     { id: 'photos', label: 'PHOTOS' }
   ];
 
-  // Use XP as happiness for localStorage plants
-  const happiness = plant.xp ?? 50;
+  // Use Firestore plant if available, otherwise fall back to localStorage plant
+  const plant = firestorePlant || localPlant;
+  const isFirestorePlant = !!firestorePlant;
+  
+  // Get happiness from Firestore plant or use XP as fallback
+  const happiness = isFirestorePlant 
+    ? (firestorePlant.happiness ?? 50)
+    : (localPlant.xp ?? 50);
   const happinessColor = getHappinessColor(happiness);
   const happinessStatus = getHappinessStatusText(happiness);
   const daysInCare = getDaysInCare();
@@ -134,7 +187,10 @@ export function PlantDetailPage({ plant, onBack }: PlantDetailPageProps) {
           
           <div className="flex-1 text-center md:text-left">
             <h1 className="text-[20px] text-[var(--soil)] uppercase mb-2">{plant.name}</h1>
-            <p className="text-[12px] text-[var(--khaki)] mb-4">{plant.species}</p>
+            <p className="text-[12px] text-[var(--khaki)] mb-2">{plant.species}</p>
+            {isFirestorePlant && (
+              <p className="text-[8px] text-[var(--sprout)] uppercase">✨ AI-POWERED</p>
+            )}
             
             <div className="flex gap-2 justify-center md:justify-start">
               <input
@@ -192,7 +248,9 @@ export function PlantDetailPage({ plant, onBack }: PlantDetailPageProps) {
                   <div>
                     <p className="text-[10px] text-[var(--bark)] uppercase mb-1">Watering</p>
                     <p className="text-[10px] text-[var(--soil)]">
-                      {careRecommendations?.watering || 'Every 7 days'}
+                      {isFirestorePlant 
+                        ? `Every ${firestorePlant.wateringIntervalDays} days`
+                        : (careRecommendations?.watering || 'Every 7 days')}
                     </p>
                     <p className="text-[8px] text-[var(--khaki)]">
                       Last watered: {formatLastAction()}
@@ -238,17 +296,67 @@ export function PlantDetailPage({ plant, onBack }: PlantDetailPageProps) {
           <div>
             <h2 className="text-[14px] text-[var(--soil)] uppercase mb-4">Care Tasks</h2>
             <div className="space-y-3">
-              <p className="text-[10px] text-[var(--khaki)] mb-4">
-                Tasks are managed in the Daily Tasks calendar on the home page.
-              </p>
-              <p className="text-[10px] text-[var(--soil)] mb-2">
-                🔜 Coming soon: Autonomous AI task scheduling
-              </p>
-              <ul className="text-[10px] text-[var(--khaki)] space-y-1">
-                <li>• Automatic watering reminders</li>
-                <li>• Fertilizing schedules</li>
-                <li>• Care tracking</li>
-              </ul>
+              {isFirestorePlant ? (
+                <>
+                  <p className="text-[10px] text-[var(--khaki)] mb-3">
+                    Tasks appear in the Daily Tasks calendar on the home page.
+                  </p>
+                  
+                  {tasks && tasks.length > 0 ? (
+                    <div className="space-y-2">
+                      <p className="text-[10px] text-[var(--bark)] uppercase mb-2">Upcoming Tasks</p>
+                      {tasks
+                        .filter(task => !task.completed)
+                        .slice(0, 5)
+                        .map((task) => (
+                          <div key={task.id} className="flex items-center gap-2 p-2 bg-[var(--sand)] pixel-border">
+                            <span className="text-[10px] text-[var(--soil)]">
+                              {task.type === 'watering' ? '💧' : '🌿'} {task.type === 'watering' ? 'Water' : 'Fertilize'} {plant.name}
+                            </span>
+                            <span className="text-[8px] text-[var(--khaki)] ml-auto">
+                              {task.scheduledDate?.toDate().toLocaleDateString()}
+                            </span>
+                          </div>
+                        ))}
+                    </div>
+                  ) : (
+                    <div className="p-4 bg-[var(--sand)] pixel-border">
+                      <p className="text-[10px] text-[var(--soil)] mb-2">No tasks scheduled yet</p>
+                      <p className="text-[8px] text-[var(--khaki)]">
+                        Upload a photo or use the button below to generate a care schedule
+                      </p>
+                    </div>
+                  )}
+                  
+                  <PixelButton
+                    variant="primary"
+                    size="sm"
+                    onClick={async () => {
+                      try {
+                        const userId = auth?.currentUser?.uid || 'local-user';
+                        toast.success('Generating care schedule...');
+                        const response = await generateSchedule(userId, localPlant.id, plant.species);
+                        if (response.status === 'updated') {
+                          toast.success('Care schedule created! Check Daily Tasks.');
+                          fetchPlant(localPlant.id);
+                        }
+                      } catch (err) {
+                        console.error('Schedule generation error:', err);
+                        toast.error('Failed to generate schedule. Check API server.');
+                      }
+                    }}
+                  >
+                    GENERATE CARE SCHEDULE
+                  </PixelButton>
+                </>
+              ) : (
+                <div className="p-4 bg-[var(--sand)] pixel-border">
+                  <p className="text-[10px] text-[var(--soil)] mb-2">⚠️ AI features not enabled</p>
+                  <p className="text-[8px] text-[var(--khaki)]">
+                    Click "MIGRATE TO AI" on the home page to enable autonomous task scheduling
+                  </p>
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -292,28 +400,58 @@ export function PlantDetailPage({ plant, onBack }: PlantDetailPageProps) {
         {activeTab === 'photos' && (
           <div>
             <h2 className="text-[14px] text-[var(--soil)] uppercase mb-4">Photo Gallery</h2>
-            <div className="text-center py-12">
-              <span className="text-[60px] opacity-30">📸</span>
-              <p className="text-[10px] text-[var(--khaki)] uppercase mt-4">
-                No photos yet<br />
-                Add photos to track growth!
-              </p>
-              <PixelButton
-                variant="accent"
-                size="sm"
-                className="mt-4"
-                onClick={() => fileInputRef.current?.click()}
-                disabled={!storage}
-              >
-                <Upload className="w-4 h-4 mr-2" strokeWidth={2.5} />
-                UPLOAD PHOTO
-              </PixelButton>
-              {!storage && (
-                <p className="text-[8px] text-[var(--khaki)] mt-2">
-                  Photo upload requires Firebase configuration
+            {isFirestorePlant && firestorePlant.photoUrls && firestorePlant.photoUrls.length > 0 ? (
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                  {firestorePlant.photoUrls.map((url, index) => (
+                    <div key={index} className="aspect-square pixel-border overflow-hidden bg-[var(--sand)]">
+                      <img 
+                        src={url} 
+                        alt={`${plant.name} photo ${index + 1}`}
+                        className="w-full h-full object-cover"
+                      />
+                    </div>
+                  ))}
+                </div>
+                <PixelButton
+                  variant="accent"
+                  size="sm"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={!storage || uploadingPhoto}
+                >
+                  <Upload className="w-4 h-4 mr-2" strokeWidth={2.5} />
+                  {uploadingPhoto ? 'UPLOADING...' : 'ADD ANOTHER PHOTO'}
+                </PixelButton>
+              </div>
+            ) : (
+              <div className="text-center py-12">
+                <span className="text-[60px] opacity-30">📸</span>
+                <p className="text-[10px] text-[var(--khaki)] uppercase mt-4">
+                  No photos yet<br />
+                  Add photos to track growth!
                 </p>
-              )}
-            </div>
+                <PixelButton
+                  variant="accent"
+                  size="sm"
+                  className="mt-4"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={!storage || uploadingPhoto}
+                >
+                  <Upload className="w-4 h-4 mr-2" strokeWidth={2.5} />
+                  {uploadingPhoto ? 'UPLOADING...' : 'UPLOAD PHOTO'}
+                </PixelButton>
+                {!storage && (
+                  <p className="text-[8px] text-[var(--khaki)] mt-2">
+                    Photo upload requires Firebase configuration
+                  </p>
+                )}
+                {!isFirestorePlant && storage && (
+                  <p className="text-[8px] text-[var(--clay)] mt-2">
+                    ⚠️ Migrate to AI to enable photo tracking
+                  </p>
+                )}
+              </div>
+            )}
           </div>
         )}
       </PixelCard>

@@ -9,7 +9,11 @@ import { db, auth } from '../lib/firebase-client';
 import { PlantTask } from '../types/plant';
 import { toast } from 'sonner';
 
-export function DailyTasksJournal() {
+interface DailyTasksJournalProps {
+  selectedPlantId?: string; // Optional: filter tasks by specific plant
+}
+
+export function DailyTasksJournal({ selectedPlantId }: DailyTasksJournalProps = {}) {
   const [selectedDate, setSelectedDate] = useState(new Date());
   const { tasks, subscribeToTasks } = usePlantContext();
 
@@ -26,17 +30,22 @@ export function DailyTasksJournal() {
       return;
     }
 
-    const unsubscribe = subscribeToTasks();
+    // Subscribe to all tasks or plant-specific tasks
+    const unsubscribe = selectedPlantId 
+      ? subscribeToTasks(selectedPlantId)
+      : subscribeToTasks();
     return unsubscribe;
-  }, [subscribeToTasks]);
+  }, [subscribeToTasks, selectedPlantId]);
 
-  // Filter tasks for selected date
+  // Filter tasks for selected date and optionally by plant
   const getTasksForDate = (date: Date): PlantTask[] => {
     const dateStr = date.toDateString();
     return tasks.filter(task => {
       if (!task.scheduledDate) return false;
       const taskDate = task.scheduledDate.toDate();
-      return taskDate.toDateString() === dateStr;
+      const matchesDate = taskDate.toDateString() === dateStr;
+      const matchesPlant = selectedPlantId ? task.plantId === selectedPlantId : true;
+      return matchesDate && matchesPlant;
     });
   };
 
