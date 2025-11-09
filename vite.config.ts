@@ -4,7 +4,16 @@
   import path from 'path';
 
   export default defineConfig({
-    plugins: [react()],
+    plugins: [
+      react(),
+      {
+        name: 'dev-api',
+        configureServer: async (server) => {
+          const { default: apiApp } = await import('./server/dev-api');
+          server.middlewares.use(apiApp);
+        },
+      },
+    ],
     resolve: {
       extensions: ['.js', '.jsx', '.ts', '.tsx', '.json'],
       alias: {
@@ -54,7 +63,8 @@
       outDir: 'build',
     },
     server: {
+      host: '0.0.0.0', // Listen on all network interfaces
       port: 3000,
-      open: true,
+      open: false, // Manually open the network URL for QR code to work
     },
   });
