@@ -29,48 +29,64 @@ try {
 
 /**
  * Run Vertex AI agent for plant care actions
+ * Automatically falls back to Gemini API if Vertex AI has permission issues
  */
 export async function runVertexAgent(
   action: PlantAgentRequest['action'],
   payload: any
 ): Promise<PlantAgentResponse> {
-  if (!model) {
-    throw new Error('Vertex AI model not initialized. Check GCP_PROJECT_ID environment variable.');
-  }
-
-  try {
-    const prompt = buildPrompt(action, payload);
-    
-    const result = await model.generateContent({
-      contents: [{ role: 'user', parts: [{ text: prompt }] }],
-      generationConfig: {
-        temperature: 0.7,
-        maxOutputTokens: 1000,
-        responseMimeType: 'application/json',
-      },
-    });
-
-    const response = result.response;
-    const text = response.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
-    
-    // Parse JSON response
-    let parsed: any;
+  // Try Vertex AI first if initialized
+  if (model) {
     try {
-      // Try to extract JSON from markdown code blocks if present
-      const jsonMatch = text.match(/```json\s*([\s\S]*?)\s*```/) || text.match(/```\s*([\s\S]*?)\s*```/);
-      parsed = JSON.parse(jsonMatch ? jsonMatch[1] : text);
-    } catch (parseError) {
-      console.error('Failed to parse Vertex AI response:', parseError);
-      console.log('Raw response:', text);
-      throw new Error('Invalid JSON response from Vertex AI');
+      return await runWithVertexAI(action, payload);
+    } catch (error: any) {
+      // If permission denied, fall back to Gemini API
+      if (error?.message?.includes('Permission') || error?.message?.includes('403')) {
+        console.warn('Vertex AI permission denied, using Gemini API fallback');
+        return await runWithGeminiAPI(action, payload);
+      }
+      throw error;
     }
-
-    // Validate and format response
-    return formatAgentResponse(parsed, action);
-  } catch (error) {
-    console.error('Vertex AI agent error:', error);
-    throw error;
   }
+  
+  // If Vertex AI not initialized, use Gemini API directly
+  console.log('Using Gemini API (Vertex AI not configured)');
+  return await runWithGeminiAPI(action, payload);
+}
+
+/**
+ * Use Vertex AI (requires IAM permissions)
+ */
+async function runWithVertexAI(
+  action: PlantAgentRequest['action'],
+  payload: any
+): Promise<PlantAgentResponse> {
+  const prompt = buildPrompt(action, payload);
+  
+  const result = await model!.generateContent({
+    contents: [{ role: 'user', parts: [{ text: prompt }] }],
+    generationConfig: {
+      temperature: 0.7,
+      maxOutputTokens: 1000,
+      responseMimeType: 'application/json',
+    },
+  });
+
+  const response = result.response;
+  const text = response.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
+  
+  // Parse JSON response
+  let parsed: any;
+  try {
+    const jsonMatch = text.match(/```json\s*([\s\S]*?)\s*```/) || text.match(/```\s*([\s\S]*?)\s*```/);
+    parsed = JSON.parse(jsonMatch ? jsonMatch[1] : text);
+  } catch (parseError) {
+    console.error('Failed to parse Vertex AI response:', parseError);
+    console.log('Raw response:', text);
+    throw new Error('Invalid JSON response from Vertex AI');
+  }
+
+  return formatAgentResponse(parsed, action);
 }
 
 /**
@@ -196,6 +212,94 @@ function formatAgentResponse(parsed: any, action: string): PlantAgentResponse {
   }
 
   return response;
+}
+
+/**
+ * Fallback: Use Gemini API directly (no Vertex AI needed)
+ */
+async function runWithGeminiAPI(action: string, payload: any): Promise<any> {
+  const GEMINI_API_KEY = process.env.VITE_GEMINI_API_KEY;
+  if (!GEMINI_API_KEY) {
+    throw new Error('VITE_GEMINI_API_KEY not set');
+  }
+
+  let prompt = '';
+  
+  switch (action) {
+    case 'generate_schedule':
+      prompt = `You are a plant care expert. Based on the plant species "${payload.species || 'unknown'}", 
+provide optimal care intervals in JSON format:
+{
+  "watering_interval_days": <number>,
+  "fertilizing_interval_days": <number>,
+  "recommendations": "<brief care tips>"
+}
+
+Use realistic intervals. For example:
+- Succulents: 10-14 days watering, 30 days fertilizing
+- Tropical plants: 5-7 days watering, 14 days fertilizing  
+- Herbs: 3-5 days watering, 7-14 days fertilizing
+
+Return ONLY the JSON, no other text.`;
+      break;
+      
+    case 'update_status':
+      prompt = `Calculate happiness change for plant care task.
+Task type: ${payload.taskType}
+Completed: ${payload.completed}
+Current happiness: ${payload.currentHappiness}
+
+Return JSON:
+{
+  "happiness_change": <number>,
+  "new_happiness": <number (0-100)>,
+  "recommendations": "<brief message>"
+}`;
+      break;
+      
+    case 'analyze_photo':
+      prompt = `You are analyzing a plant photo. Assess the plant's health and assign a happiness score (0-100).
+Return JSON:
+{
+  "happiness": <number (0-100)>,
+  "health_status": "healthy" | "needs_attention" | "neglected" | "emergency",
+  "recommendations": "<brief assessment>"
+}
+
+For initial photos of healthy-looking plants, use 75-85 happiness.`;
+      break;
+      
+    default:
+      throw new Error(`Unknown action: ${action}`);
+  }
+
+  const response = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${GEMINI_API_KEY}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: {
+          temperature: 0.7,
+          maxOutputTokens: 500,
+        },
+      }),
+    }
+  );
+
+  if (!response.ok) {
+    throw new Error(`Gemini API error: ${response.status}`);
+  }
+
+  const data = await response.json();
+  const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
+  
+  // Parse JSON response
+  const jsonMatch = text.match(/\{[\s\S]*\}/);
+  const jsonStr = jsonMatch ? jsonMatch[0] : text;
+  
+  return JSON.parse(jsonStr);
 }
 
 // Happiness helper functions are now in src/utils/happiness.ts

@@ -165,28 +165,26 @@ export function PlantProvider({ children }: PlantProviderProps) {
    * Subscribe to real-time task updates
    */
   const subscribeToTasks = (plantId?: string) => {
-    if (!db || !auth) {
+    if (!db) {
       console.warn('Firebase not configured for task subscription');
       return () => {};
     }
     
-    const user = auth.currentUser;
-    if (!user) {
-      console.warn('No authenticated user for task subscription');
-      return () => {};
-    }
+    // Get user ID - use 'local-user' for development if not authenticated
+    const userId = auth?.currentUser?.uid || 'local-user';
+    console.log(`📡 Subscribing to tasks for userId: ${userId}${plantId ? `, plantId: ${plantId}` : ''}`);
 
     let tasksQuery;
     if (plantId) {
       tasksQuery = query(
         collection(db, 'tasks'),
-        where('userId', '==', user.uid),
+        where('userId', '==', userId),
         where('plantId', '==', plantId)
       );
     } else {
       tasksQuery = query(
         collection(db, 'tasks'),
-        where('userId', '==', user.uid)
+        where('userId', '==', userId)
       );
     }
 
@@ -200,6 +198,12 @@ export function PlantProvider({ children }: PlantProviderProps) {
             ...doc.data(),
           } as PlantTask);
         });
+        console.log(`📋 Fetched ${tasksData.length} tasks from Firestore:`, tasksData.map(t => ({ 
+          id: t.id, 
+          type: t.type, 
+          plantName: t.plantName,
+          scheduledDate: t.scheduledDate?.toDate()
+        })));
         setTasks(tasksData);
       },
       (err) => {

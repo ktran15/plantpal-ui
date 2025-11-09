@@ -19,18 +19,15 @@ export function DailyTasksJournal({ selectedPlantId }: DailyTasksJournalProps = 
 
   // Subscribe to tasks on mount (only if Firebase is configured)
   useEffect(() => {
-    if (!auth || !db) {
+    if (!db) {
       console.warn('Firebase not configured - using local tasks only');
       return;
     }
     
-    const user = auth.currentUser;
-    if (!user) {
-      // No user logged in, but don't crash - just skip subscription
-      return;
-    }
-
+    console.log('🚀 DailyTasksJournal: Starting task subscription', { selectedPlantId });
+    
     // Subscribe to all tasks or plant-specific tasks
+    // No auth check - use local-user in development
     const unsubscribe = selectedPlantId 
       ? subscribeToTasks(selectedPlantId)
       : subscribeToTasks();
@@ -40,13 +37,32 @@ export function DailyTasksJournal({ selectedPlantId }: DailyTasksJournalProps = 
   // Filter tasks for selected date and optionally by plant
   const getTasksForDate = (date: Date): PlantTask[] => {
     const dateStr = date.toDateString();
-    return tasks.filter(task => {
-      if (!task.scheduledDate) return false;
+    console.log(`🔍 Filtering tasks for date: ${dateStr}`, {
+      totalTasks: tasks.length,
+      selectedPlantId,
+    });
+    
+    const filtered = tasks.filter(task => {
+      if (!task.scheduledDate) {
+        console.log('❌ Task has no scheduledDate:', task);
+        return false;
+      }
       const taskDate = task.scheduledDate.toDate();
       const matchesDate = taskDate.toDateString() === dateStr;
       const matchesPlant = selectedPlantId ? task.plantId === selectedPlantId : true;
+      
+      console.log(`Task ${task.id}:`, {
+        taskDate: taskDate.toDateString(),
+        matchesDate,
+        matchesPlant,
+        included: matchesDate && matchesPlant,
+      });
+      
       return matchesDate && matchesPlant;
     });
+    
+    console.log(`✅ Filtered ${filtered.length} tasks for ${dateStr}`);
+    return filtered;
   };
 
   const dateTasks = getTasksForDate(selectedDate);
