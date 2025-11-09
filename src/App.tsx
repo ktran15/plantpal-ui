@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { Routes, Route, useLocation } from 'react-router-dom';
 import { Header } from './components/Header';
 import { Footer } from './components/Footer';
 import { HomePage } from './components/HomePage';
@@ -9,6 +10,7 @@ import { PlantPalAgent } from './components/PlantPalAgent';
 import { AddPlantModal } from './components/AddPlantModal';
 import { DesignShowcase } from './components/DesignShowcase';
 import { ApiKeyBanner } from './components/ApiKeyBanner';
+import { MobileUploadPage } from './components/MobileUploadPage';
 import { Toaster } from './components/ui/sonner';
 import { toast } from 'sonner@2.0.3';
 import { Plant } from './types/plant';
@@ -21,6 +23,7 @@ type View = 'showcase' | 'home' | 'myPlants' | 'plantDetail' | 'camera';
 const SELECTED_PLANT_INDEX_KEY = 'plantpals_selectedPlantIndex';
 
 export default function App() {
+  const location = useLocation();
   const [currentView, setCurrentView] = useState<View>('showcase');
   const [selectedPlantId, setSelectedPlantId] = useState<string | null>(null);
   const [isAgentOpen, setIsAgentOpen] = useState(false);
@@ -147,7 +150,17 @@ export default function App() {
     setCurrentView('plantDetail');
   };
 
-  const renderView = () => {
+  // Sync currentView changes with navigation
+  useEffect(() => {
+    if (location.pathname.startsWith('/mobile-upload/')) {
+      // Don't interfere with mobile upload route
+      return;
+    }
+    
+    // Keep internal state-based navigation for main app
+  }, [currentView, location.pathname]);
+
+  const renderMainApp = () => {
     switch (currentView) {
       case 'showcase':
         return <DesignShowcase onStart={() => setCurrentView('home')} />;
@@ -196,52 +209,65 @@ export default function App() {
     <ErrorBoundary>
       <PlantProvider>
         <div className="min-h-screen flex flex-col bg-[var(--eggshell)] pixel-grid-bg">
-          {currentView !== 'showcase' && (
-            <Header
-              onCameraClick={() => setCurrentView('camera')}
-              onMyPlantsClick={() => setCurrentView('myPlants')}
-              onAgentClick={() => setIsAgentOpen(true)}
-              onAddPlantClick={() => setIsAddPlantModalOpen(true)}
-              onShowcaseClick={() => setCurrentView('showcase')}
+          <Routes>
+            {/* Mobile upload route - standalone */}
+            <Route path="/mobile-upload/:sessionId" element={<MobileUploadPage />} />
+            
+            {/* Main app route */}
+            <Route
+              path="*"
+              element={
+                <>
+                  {currentView !== 'showcase' && (
+                    <Header
+                      onCameraClick={() => setCurrentView('camera')}
+                      onMyPlantsClick={() => setCurrentView('myPlants')}
+                      onAgentClick={() => setIsAgentOpen(true)}
+                      onAddPlantClick={() => setIsAddPlantModalOpen(true)}
+                      onShowcaseClick={() => setCurrentView('showcase')}
+                    />
+                  )}
+                  
+                  <main className={currentView === 'showcase' ? '' : 'flex-1 py-6'}>
+                    {showApiKeyBanner && currentView !== 'showcase' && (
+                      <div className="max-w-7xl mx-auto px-4 md:px-6 pt-4">
+                        <ApiKeyBanner onDismiss={() => setShowApiKeyBanner(false)} />
+                      </div>
+                    )}
+                    {renderMainApp()}
+                  </main>
+                  
+                  {currentView !== 'showcase' && <Footer />}
+                  
+                  <PlantPalAgent 
+                    isOpen={isAgentOpen} 
+                    onClose={() => setIsAgentOpen(false)} 
+                  />
+                  
+                  <AddPlantModal
+                    isOpen={isAddPlantModalOpen}
+                    onClose={() => setIsAddPlantModalOpen(false)}
+                    onAdd={handleAddPlant}
+                  />
+                </>
+              }
             />
-          )}
+          </Routes>
           
-          <main className={currentView === 'showcase' ? '' : 'flex-1 py-6'}>
-            {showApiKeyBanner && currentView !== 'showcase' && (
-              <div className="max-w-7xl mx-auto px-4 md:px-6 pt-4">
-                <ApiKeyBanner onDismiss={() => setShowApiKeyBanner(false)} />
-              </div>
-            )}
-            {renderView()}
-          </main>
-        
-        {currentView !== 'showcase' && <Footer />}
-        
-        <PlantPalAgent 
-          isOpen={isAgentOpen} 
-          onClose={() => setIsAgentOpen(false)} 
-        />
-        
-        <AddPlantModal
-          isOpen={isAddPlantModalOpen}
-          onClose={() => setIsAddPlantModalOpen(false)}
-          onAdd={handleAddPlant}
-        />
-        
-        <Toaster 
-          position="top-center"
-          toastOptions={{
-            style: {
-              fontFamily: 'Press Start 2P, monospace',
-              fontSize: '10px',
-              textTransform: 'uppercase',
-              border: '2px solid var(--bark)',
-              boxShadow: '3px 3px 0 0 rgba(106, 60, 51, 0.3)',
-            },
-        }}
-      />
-      </div>
-    </PlantProvider>
+          <Toaster 
+            position="top-center"
+            toastOptions={{
+              style: {
+                fontFamily: 'Press Start 2P, monospace',
+                fontSize: '10px',
+                textTransform: 'uppercase',
+                border: '2px solid var(--bark)',
+                boxShadow: '3px 3px 0 0 rgba(106, 60, 51, 0.3)',
+              },
+            }}
+          />
+        </div>
+      </PlantProvider>
     </ErrorBoundary>
   );
 }

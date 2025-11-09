@@ -27,7 +27,7 @@ export function Header({
           <div className="w-8 h-8 bg-[var(--sprout)] pixel-border pixel-shadow-sm flex items-center justify-center hover:bg-[var(--fern)] transition-colors">
             <Sprout className="w-5 h-5 text-white" strokeWidth={2.5} />
           </div>
-          <h1 className="text-[16px] text-[var(--soil)]">PLANTPAL</h1>
+          <h1 className="text-[16px] text-[var(--soil)]">PLANT PALS</h1>
         </button>
 
         <nav className="flex items-center gap-2">

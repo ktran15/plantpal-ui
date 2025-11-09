@@ -1,9 +1,12 @@
 import { useState, useRef, useEffect } from "react";
-import { Upload, ArrowLeft } from "lucide-react";
+import { Upload, ArrowLeft, Copy, RefreshCw } from "lucide-react";
+import { QRCodeSVG } from "qrcode.react";
+import { toast } from "sonner@2.0.3";
 import { PixelButton } from "./PixelButton";
 import { PixelCard } from "./PixelCard";
 import { PixelLoader } from "./PixelLoader";
 import { DiagnosisPanel } from "./DiagnosisPanel";
+import { generateSessionId, buildMobileUrl, getNetworkAccessHint } from "../utils/session";
 import {
   identifyPlant,
   diagnosePlant,
@@ -35,6 +38,80 @@ export function CameraPage({ onBack }: CameraPageProps) {
   
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // QR/Session state
+  const [sessionId, setSessionId] = useState<string>("");
+  const [mobileUrl, setMobileUrl] = useState<string>("");
+  const [imageReceived, setImageReceived] = useState(false);
+  const pollingIntervalRef = useRef<number | null>(null);
+
+  // Initialize session on mount
+  useEffect(() => {
+    const newSessionId = generateSessionId();
+    setSessionId(newSessionId);
+    setMobileUrl(buildMobileUrl(newSessionId));
+  }, []);
+
+  // Start polling when sessionId is set
+  useEffect(() => {
+    if (!sessionId) return;
+
+    const pollForImage = async () => {
+      try {
+        const response = await fetch(`/api/session/${sessionId}/image`);
+        const data = await response.json();
+
+        if (data.found && data.dataUrl) {
+          // Set image to current mode's state
+          if (mode === "identify") {
+            setIdentifyImage(data.dataUrl);
+            setIdentifyError(null);
+            setIsAnalyzing(true);
+            try {
+              const result = await identifyPlant(data.dataUrl);
+              setPlantInfo(result);
+            } catch (err) {
+              setIdentifyError(err instanceof Error ? err.message : "Failed to identify plant");
+            } finally {
+              setIsAnalyzing(false);
+            }
+          } else {
+            setDiagnoseImage(data.dataUrl);
+            setDiagnosisError(null);
+            setIsAnalyzing(true);
+            try {
+              const result = await diagnosePlant(data.dataUrl);
+              setDiagnosis(result);
+            } catch (err) {
+              setDiagnosisError(err instanceof Error ? err.message : "Failed to diagnose plant");
+            } finally {
+              setIsAnalyzing(false);
+            }
+          }
+
+          setImageReceived(true);
+
+          // Stop polling
+          if (pollingIntervalRef.current) {
+            clearInterval(pollingIntervalRef.current);
+            pollingIntervalRef.current = null;
+          }
+        }
+      } catch (err) {
+        console.error("Error polling for image:", err);
+      }
+    };
+
+    // Start polling every 2 seconds
+    pollingIntervalRef.current = window.setInterval(pollForImage, 2000);
+
+    return () => {
+      if (pollingIntervalRef.current) {
+        clearInterval(pollingIntervalRef.current);
+        pollingIntervalRef.current = null;
+      }
+    };
+  }, [sessionId, mode]);
+
   // Reset all state when component unmounts (user navigates away)
   useEffect(() => {
     return () => {
@@ -44,6 +121,9 @@ export function CameraPage({ onBack }: CameraPageProps) {
       setDiagnosisError(null);
       setIdentifyImage(null);
       setDiagnoseImage(null);
+      if (pollingIntervalRef.current) {
+        clearInterval(pollingIntervalRef.current);
+      }
     };
   }, []);
 
@@ -56,6 +136,42 @@ export function CameraPage({ onBack }: CameraPageProps) {
     setIdentifyImage(null);
     setDiagnoseImage(null);
     onBack();
+  };
+
+  const handleCopyLink = async () => {
+    try {
+      await navigator.clipboard.writeText(mobileUrl);
+      toast.success("Link copied to clipboard!", { duration: 2000 });
+    } catch (err) {
+      toast.error("Failed to copy link", { duration: 2000 });
+    }
+  };
+
+  const handleRegenerateSession = () => {
+    // Stop current polling
+    if (pollingIntervalRef.current) {
+      clearInterval(pollingIntervalRef.current);
+      pollingIntervalRef.current = null;
+    }
+
+    // Generate new session
+    const newSessionId = generateSessionId();
+    setSessionId(newSessionId);
+    setMobileUrl(buildMobileUrl(newSessionId));
+    setImageReceived(false);
+
+    // Clear current mode's image if it was from QR upload
+    if (mode === "identify") {
+      setIdentifyImage(null);
+      setPlantInfo(null);
+      setIdentifyError(null);
+    } else {
+      setDiagnoseImage(null);
+      setDiagnosis(null);
+      setDiagnosisError(null);
+    }
+
+    toast.success("New session created!", { duration: 2000 });
   };
 
   const handleFileSelect = async (
@@ -137,45 +253,112 @@ export function CameraPage({ onBack }: CameraPageProps) {
         </PixelButton>
       </div>
 
-      <PixelCard className="p-6">
-        {/* Upload Area */}
-        <div
-          onClick={() => fileInputRef.current?.click()}
-          className="border-2 border-dashed border-[var(--bark)] bg-[var(--sand)] p-12 cursor-pointer hover:bg-[var(--khaki)] transition-colors flex flex-col items-center justify-center min-h-[300px]"
-        >
-          {(mode === "identify" ? identifyImage : diagnoseImage) ? (
-            <img
-              src={mode === "identify" ? identifyImage : diagnoseImage}
-              alt="Selected plant"
-              className="max-h-[400px] object-contain"
-            />
-          ) : (
-            <>
-              <Upload
-                className="w-12 h-12 text-[var(--khaki)] mb-4"
-                strokeWidth={2}
+      {/* Main content area with 75/25 split */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+        {/* Left side - Upload panel (75% on md+) */}
+        <PixelCard className="md:col-span-3 p-6">
+          {/* Upload Area */}
+          <div
+            onClick={() => fileInputRef.current?.click()}
+            className="border-2 border-dashed border-[var(--bark)] bg-[var(--sand)] p-12 cursor-pointer hover:bg-[var(--khaki)] transition-colors flex flex-col items-center justify-center min-h-[300px]"
+          >
+            {(mode === "identify" ? identifyImage : diagnoseImage) ? (
+              <img
+                src={mode === "identify" ? identifyImage : diagnoseImage}
+                alt="Selected plant"
+                className="max-h-[400px] object-contain"
               />
-              <p className="text-[12px] text-[var(--soil)] uppercase mb-2">
-                {mode === "identify"
-                  ? "IDENTIFY PLANT"
-                  : "DIAGNOSE PLANT"}
-              </p>
-              <p className="text-[10px] text-[var(--khaki)] text-center">
-                Click to upload a photo
-                <br />
-                PNG or JPG (max 5MB)
-              </p>
-            </>
-          )}
-        </div>
+            ) : (
+              <>
+                <Upload
+                  className="w-12 h-12 text-[var(--khaki)] mb-4"
+                  strokeWidth={2}
+                />
+                <p className="text-[12px] text-[var(--soil)] uppercase mb-2">
+                  {mode === "identify"
+                    ? "IDENTIFY PLANT"
+                    : "DIAGNOSE PLANT"}
+                </p>
+                <p className="text-[10px] text-[var(--khaki)] text-center">
+                  Click to upload a photo
+                  <br />
+                  PNG or JPG (max 5MB)
+                </p>
+              </>
+            )}
+          </div>
 
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="image/png,image/jpeg"
-          onChange={handleFileSelect}
-          className="hidden"
-        />
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/png,image/jpeg"
+            onChange={handleFileSelect}
+            className="hidden"
+          />
+        </PixelCard>
+
+        {/* Right side - QR panel (25% on md+) */}
+        <PixelCard className="md:col-span-1 p-4">
+          <h3 className="text-[10px] text-[var(--soil)] uppercase mb-4 text-center">
+            Scan to Upload from Phone
+          </h3>
+
+          {/* Network hint */}
+          <div className="text-[8px] text-center text-[var(--khaki)] mb-2 px-1">
+            {getNetworkAccessHint()}
+          </div>
+
+          {/* QR Code */}
+          <div className="flex justify-center mb-4 bg-white p-2 pixel-border">
+            <QRCodeSVG value={mobileUrl} size={128} includeMargin />
+          </div>
+
+          {/* Status Badge */}
+          <div className={`text-center mb-3 px-2 py-1 pixel-border text-[8px] uppercase ${
+            imageReceived 
+              ? "bg-[var(--sprout)] text-white" 
+              : "bg-[var(--sand)] text-[var(--khaki)]"
+          }`}>
+            {imageReceived ? "Image received ✓" : "Waiting for upload..."}
+          </div>
+
+          {/* Mobile URL */}
+          <div className="mb-3">
+            <input
+              type="text"
+              value={mobileUrl}
+              readOnly
+              className="w-full text-[8px] px-2 py-1 border-2 border-[var(--bark)] bg-[var(--sand)] text-[var(--soil)] mb-2"
+              aria-label="Mobile upload URL"
+            />
+            <PixelButton
+              onClick={handleCopyLink}
+              variant="secondary"
+              size="sm"
+              className="w-full"
+              aria-label="Copy link to clipboard"
+            >
+              <Copy className="w-3 h-3 inline mr-1" />
+              Copy Link
+            </PixelButton>
+          </div>
+
+          {/* Regenerate Button */}
+          <PixelButton
+            onClick={handleRegenerateSession}
+            variant="accent"
+            size="sm"
+            className="w-full"
+            aria-label="Generate new session"
+          >
+            <RefreshCw className="w-3 h-3 inline mr-1" />
+            Regenerate
+          </PixelButton>
+        </PixelCard>
+      </div>
+
+      {/* Results area (full width below) */}
+      <PixelCard className="p-6">
 
         {/* Analysis Results */}
         {(mode === "identify" ? identifyImage : diagnoseImage) && (
