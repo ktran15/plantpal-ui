@@ -13,6 +13,8 @@ import { Toaster } from './components/ui/sonner';
 import { toast } from 'sonner@2.0.3';
 import { Plant } from './types/plant';
 import { getAllPlants, savePlants, createPlant, deletePlant } from './services/plants';
+import { PlantProvider } from './contexts/PlantContext';
+import { ErrorBoundary } from './components/ErrorBoundary';
 
 type View = 'showcase' | 'home' | 'myPlants' | 'plantDetail' | 'camera';
 
@@ -168,65 +170,78 @@ export default function App() {
           />
         );
       case 'plantDetail':
-        return selectedPlantId ? (
+        const selectedPlant = plants.find(p => p.id === selectedPlantId);
+        return selectedPlant ? (
           <PlantDetailPage 
-            plantId={selectedPlantId} 
+            plant={selectedPlant}
             onBack={() => setCurrentView('myPlants')} 
           />
         ) : null;
       case 'camera':
         return <CameraPage onBack={() => setCurrentView('home')} />;
       default:
-        return <HomePage onAddPlantClick={() => setIsAddPlantModalOpen(true)} />;
+        return (
+          <HomePage
+            onAddPlantClick={() => setIsAddPlantModalOpen(true)}
+            plants={plants}
+            selectedPlantIndex={selectedPlantIndex}
+            onSelectPlant={handleSelectPlant}
+            plantCount={plants.length}
+          />
+        );
     }
   };
 
   return (
-    <div className="min-h-screen flex flex-col bg-[var(--eggshell)] pixel-grid-bg">
-      {currentView !== 'showcase' && (
-        <Header
-          onCameraClick={() => setCurrentView('camera')}
-          onMyPlantsClick={() => setCurrentView('myPlants')}
-          onAgentClick={() => setIsAgentOpen(true)}
-          onAddPlantClick={() => setIsAddPlantModalOpen(true)}
-          onShowcaseClick={() => setCurrentView('showcase')}
+    <ErrorBoundary>
+      <PlantProvider>
+        <div className="min-h-screen flex flex-col bg-[var(--eggshell)] pixel-grid-bg">
+          {currentView !== 'showcase' && (
+            <Header
+              onCameraClick={() => setCurrentView('camera')}
+              onMyPlantsClick={() => setCurrentView('myPlants')}
+              onAgentClick={() => setIsAgentOpen(true)}
+              onAddPlantClick={() => setIsAddPlantModalOpen(true)}
+              onShowcaseClick={() => setCurrentView('showcase')}
+            />
+          )}
+          
+          <main className={currentView === 'showcase' ? '' : 'flex-1 py-6'}>
+            {showApiKeyBanner && currentView !== 'showcase' && (
+              <div className="max-w-7xl mx-auto px-4 md:px-6 pt-4">
+                <ApiKeyBanner onDismiss={() => setShowApiKeyBanner(false)} />
+              </div>
+            )}
+            {renderView()}
+          </main>
+        
+        {currentView !== 'showcase' && <Footer />}
+        
+        <PlantPalAgent 
+          isOpen={isAgentOpen} 
+          onClose={() => setIsAgentOpen(false)} 
         />
-      )}
-      
-      <main className={currentView === 'showcase' ? '' : 'flex-1 py-6'}>
-        {showApiKeyBanner && currentView !== 'showcase' && (
-          <div className="max-w-7xl mx-auto px-4 md:px-6 pt-4">
-            <ApiKeyBanner onDismiss={() => setShowApiKeyBanner(false)} />
-          </div>
-        )}
-        {renderView()}
-      </main>
-      
-      {currentView !== 'showcase' && <Footer />}
-      
-      <PlantPalAgent 
-        isOpen={isAgentOpen} 
-        onClose={() => setIsAgentOpen(false)} 
-      />
-      
-      <AddPlantModal
-        isOpen={isAddPlantModalOpen}
-        onClose={() => setIsAddPlantModalOpen(false)}
-        onAdd={handleAddPlant}
-      />
-      
-      <Toaster 
-        position="top-center"
-        toastOptions={{
-          style: {
-            fontFamily: 'Press Start 2P, monospace',
-            fontSize: '10px',
-            textTransform: 'uppercase',
-            border: '2px solid var(--bark)',
-            boxShadow: '3px 3px 0 0 rgba(106, 60, 51, 0.3)',
-          },
+        
+        <AddPlantModal
+          isOpen={isAddPlantModalOpen}
+          onClose={() => setIsAddPlantModalOpen(false)}
+          onAdd={handleAddPlant}
+        />
+        
+        <Toaster 
+          position="top-center"
+          toastOptions={{
+            style: {
+              fontFamily: 'Press Start 2P, monospace',
+              fontSize: '10px',
+              textTransform: 'uppercase',
+              border: '2px solid var(--bark)',
+              boxShadow: '3px 3px 0 0 rgba(106, 60, 51, 0.3)',
+            },
         }}
       />
-    </div>
+      </div>
+    </PlantProvider>
+    </ErrorBoundary>
   );
 }
